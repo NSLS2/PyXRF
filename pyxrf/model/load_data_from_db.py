@@ -820,12 +820,20 @@ def map_data2D_hxn(
     data_output = []
 
     start_doc = hdr["start"]
-    logger.info("Plan type: '%s'", start_doc["plan_type"])
+
+    if "scan" in start_doc:
+        #print(" panda scan ")
+        plan_type = start_doc["scan"]["type"]
+
+    else:
+        plan_type = start_doc["plan_type"]
+
+    logger.info("Plan type: '%s'", plan_type)
 
     # Exclude certain types of plans based on data from the start document
-    if isinstance(skip_scan_types, (list, tuple)) and (start_doc["plan_type"] in skip_scan_types):
+    if isinstance(skip_scan_types, (list, tuple)) and (plan_type in skip_scan_types):
         raise RuntimeError(
-            f"Failed to load the scan: plan type {start_doc['plan_type']!r} is in the list of skipped types"
+            f"Failed to load the scan: plan type {plan_type!r} is in the list of skipped types"
         )
 
     # The dictionary holding scan metadata
@@ -920,11 +928,17 @@ def map_data2D_hxn(
     else:
         raise ValueError(f"Invalid data shape: {datashape}. Must be a list with 1 or 2 elements.")
 
+    logger.info(f'Data shape: {datashape}.')
+
     # -----------------------------------------------------------------------------------------------
     # Determine fast axis and slow axis
     fast_axis, slow_axis, fast_axis_index = start_doc.get("fast_axis", None), None, None
     motors = start_doc.get("motors", None)
-    if motors and isinstance(motors, (list, tuple)) and len(motors) == 2:
+    if motors and isinstance(motors, (list, tuple)) and len(motors) == 1:
+        fast_axis = fast_axis if fast_axis else motors[0]
+        fast_axis_index = motors.index(fast_axis, 0)
+
+    elif motors and isinstance(motors, (list, tuple)) and len(motors) == 2:
         fast_axis = fast_axis if fast_axis else motors[0]
         fast_axis_index = motors.index(fast_axis, 0)
         slow_axis_index = 0 if (fast_axis_index == 1) else 1
@@ -940,14 +954,24 @@ def map_data2D_hxn(
     # -----------------------------------------------------------------------------------------------
     # Reconstruct scan input
     try:
-        plan_args = start_doc["plan_args"]
-        # px_motor = plan_args["motor1"]
-        px_start, px_end, px_step = plan_args["scan_start1"], plan_args["scan_end1"], plan_args["num1"]
-        # py_motor = plan_args["motor2"]
-        py_start, py_end, py_step = plan_args["scan_start2"], plan_args["scan_end2"], plan_args["num2"]
-        dwell_time = plan_args["exposure_time"]
-        param_input = [px_start, px_end, px_step, py_start, py_end, py_step, dwell_time]
-        mdata["param_input"] = param_input
+        if "plan_args" in start_doc: # dscan and fly1d/fly2d scan
+            plan_args = start_doc["plan_args"]
+            # px_motor = plan_args["motor1"]
+            px_start, px_end, px_step = plan_args["scan_start1"], plan_args["scan_end1"], plan_args["num1"]
+            # py_motor = plan_args["motor2"]
+            py_start, py_end, py_step = plan_args["scan_start2"], plan_args["scan_end2"], plan_args["num2"]
+            dwell_time = plan_args["exposure_time"]
+            param_input = [px_start, px_end, px_step, py_start, py_end, py_step, dwell_time]
+            mdata["param_input"] = param_input
+        elif "scan" in start_doc: # fly1dpd and fly2dpd scan
+            scan_input = start_doc["scan"]["scan_input"]
+            px_start, px_end, px_step = scan_input[0:3]
+            py_start, py_end, py_step = scan_input[3:6]
+            dwell_time = start_doc["scan"]["dwell"]
+            param_input = [px_start, px_end, px_step, py_start, py_end, py_step, dwell_time]
+            mdata["param_input"] = param_input
+        else:
+            raise Exception("Unknown scan plan type")
     except Exception as ex:
         logger.warning(
             "Failed to reconstruct scan input: %s. Scan input is not saved as part of metadata to HDF5 file",
@@ -966,7 +990,8 @@ def map_data2D_hxn(
 
     keylist = hdr.descriptors[0].data_keys.keys()
     det_list = [v for v in keylist if "xspress3" in v]  # find xspress3 det with key word matching
-
+    det_list = [v for v in det_list if len(v)==12] #added to filter out other rois added by user
+    
     scaler_list_all = config_data["scaler_list"]
 
     all_keys = hdr.descriptors[0].data_keys.keys()
@@ -978,7 +1003,8 @@ def map_data2D_hxn(
     if isinstance(db, databroker._core.Broker):
         fields = None
 
-    data = hdr.table(fields=fields, fill=True)
+    
+    data = hdr.table(fields=fields, fill=False) # HXN data is stored in h5 files, load them later in map_data2D.
 
     # This is for the case of 'dcan' (1D), where the slow axis positions are not saved
     if (slow_axis not in data) and (fast_axis in data):
@@ -994,6 +1020,7 @@ def map_data2D_hxn(
         fly_type=fly_type,
         subscan_dims=subscan_dims,
         spectrum_len=4096,
+        hdr=hdr
     )
 
     # Transform coordinates for the fast axis if necessary:
@@ -3452,6 +3479,7 @@ def map_data2D_xfm(
             create_each_det=create_each_det,
             scaler_list=config_data["scaler_list"],
             fly_type=fly_type,
+            hdr = hdr
         )
 
         fpath_out = fpath
@@ -3485,6 +3513,7 @@ def write_db_to_hdf(
     fly_type=None,
     subscan_dims=None,
     base_val=None,
+    hdr = None
 ):
     """
     Assume data is obained from databroker, and save the data to hdf file.
@@ -3531,6 +3560,7 @@ def write_db_to_hdf(
                 dataGrp = f.create_group(interpath + "/" + detname)
 
                 logger.info("read data from %s" % c_name)
+
                 channel_data = data[c_name]
 
                 # new veritcal shape is defined to ignore zeros points caused by stopped/aborted scans
@@ -3567,8 +3597,9 @@ def write_db_to_hdf(
         # position data
         dataGrp = f.create_group(interpath + "/positions")
 
+        # scanning position data
         pos_names, pos_data = get_name_value_from_db(pos_list, data, datashape)
-
+        
         for i in range(len(pos_names)):
             if "x" in pos_names[i]:
                 pos_names[i] = "x_pos"
@@ -3593,6 +3624,7 @@ def write_db_to_hdf(
         # scaler data
         dataGrp = f.create_group(interpath + "/scalers")
 
+        # scaler data
         scaler_names, scaler_data = get_name_value_from_db(scaler_list, data, datashape)
 
         if fly_type in ("pyramid",):
@@ -3767,6 +3799,7 @@ def map_data2D(
     fly_type=None,
     subscan_dims=None,
     spectrum_len=4096,
+    hdr = None
 ):
     """
     Data is obained from databroker. Transfer items from data to a dictionary of
@@ -3806,7 +3839,10 @@ def map_data2D(
         if c_name in data:
             detname = "det" + str(n + 1)
             logger.info("read data from %s" % c_name)
-            channel_data = data[c_name]
+            if db.name == 'hxn':
+                channel_data = np.squeeze(np.array(list(hdr.data(c_name))))
+            else:
+                channel_data = data[c_name]
 
             # new veritcal shape is defined to ignore zeros points caused by stopped/aborted scans
             new_v_shape = len(channel_data) // datashape[1]
@@ -3839,8 +3875,20 @@ def map_data2D(
                 sum_data += new_data
     data_output["det_sum"] = sum_data
 
-    # scanning position data
-    pos_names, pos_data = get_name_value_from_db(pos_list, data, datashape)
+    if db.name == 'hxn':
+        pos_names = pos_list
+        pos_data = np.zeros([datashape[0], datashape[1], len(pos_list)])
+        from hxntools.scan_info import get_scan_positions
+        pos = get_scan_positions(hdr)
+        if isinstance(pos,tuple):
+            for i in range(len(pos)):
+                pos_data[:,:,i] = pos[i].reshape((datashape[0], datashape[1]))
+        else:
+            pos_data[:,:,0] = pos.reshape((datashape[0], datashape[1]))
+    else:
+        # scanning position data
+        pos_names, pos_data = get_name_value_from_db(pos_list, data, datashape)
+    
     for i in range(len(pos_names)):
         if "x" in pos_names[i]:
             pos_names[i] = "x_pos"
@@ -3871,8 +3919,15 @@ def map_data2D(
     data_output["pos_names"] = pos_names
     data_output["pos_data"] = new_p
 
-    # scaler data
-    scaler_names, scaler_data = get_name_value_from_db(scaler_list, data, datashape)
+    if db.name == 'hxn':
+        scaler_names = scaler_list
+        scaler_data = np.zeros([datashape[0], datashape[1], len(scaler_list)])
+        for i in range(len(scaler_list)):
+            scaler_data[:,:,i] = np.array(list(hdr.data(scaler_list[i]))).reshape((datashape[0], datashape[1]))
+    else:
+        # scaler data
+        scaler_names, scaler_data = get_name_value_from_db(scaler_list, data, datashape)
+
     if fly_type in ("pyramid",):
         scaler_data = flip_data(scaler_data, subscan_dims=subscan_dims)
 
