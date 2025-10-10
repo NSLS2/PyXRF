@@ -822,8 +822,16 @@ def map_data2D_hxn(
     start_doc = hdr["start"]
     logger.info("Plan type: '%s'", start_doc["plan_type"])
 
+    if "scan" in start_doc:
+        # print(" panda scan ")
+        plan_type = start_doc["scan"]["type"]
+
+    else:
+        plan_type = start_doc["plan_type"]
+
     # Exclude certain types of plans based on data from the start document
-    if isinstance(skip_scan_types, (list, tuple)) and (start_doc["plan_type"] in skip_scan_types):
+    # later change to look for 1D scan based on motor length
+    if isinstance(skip_scan_types, (list, tuple)) and plan_type in skip_scan_types:
         raise RuntimeError(
             f"Failed to load the scan: plan type {start_doc['plan_type']!r} is in the list of skipped types"
         )
@@ -924,7 +932,11 @@ def map_data2D_hxn(
     # Determine fast axis and slow axis
     fast_axis, slow_axis, fast_axis_index = start_doc.get("fast_axis", None), None, None
     motors = start_doc.get("motors", None)
-    if motors and isinstance(motors, (list, tuple)) and len(motors) == 2:
+    if motors and isinstance(motors, (list, tuple)) and len(motors) == 1:
+        fast_axis = fast_axis if fast_axis else motors[0]
+        fast_axis_index = motors.index(fast_axis, 0)
+
+    elif motors and isinstance(motors, (list, tuple)) and len(motors) == 2:
         fast_axis = fast_axis if fast_axis else motors[0]
         fast_axis_index = motors.index(fast_axis, 0)
         slow_axis_index = 0 if (fast_axis_index == 1) else 1
@@ -966,7 +978,7 @@ def map_data2D_hxn(
 
     keylist = hdr.descriptors[0].data_keys.keys()
     det_list = [v for v in keylist if "xspress3" in v]  # find xspress3 det with key word matching
-
+    det_list = [v for v in det_list if len(v) == 12]  # added to filter out other rois added by user
     scaler_list_all = config_data["scaler_list"]
 
     all_keys = hdr.descriptors[0].data_keys.keys()
@@ -974,27 +986,46 @@ def map_data2D_hxn(
 
     fields = det_list + scaler_list + pos_list
 
-    # Do not use supply 'fields' if Databroker V0 is used
-    if isinstance(db, databroker._core.Broker):
-        fields = None
+    try:  # load data with hdf5, faster
+        data_out = map_data2D_HDF5(
+            hdr,
+            datashape,
+            det_list=det_list,
+            pos_list=pos_list,
+            scaler_list=scaler_list,
+            create_each_det=create_each_det,
+            fly_type=fly_type,
+            subscan_dims=subscan_dims,
+            spectrum_len=4096,
+        )
 
-    data = hdr.table(fields=fields, fill=True)
+    except Exception as err:
+        raise err
+        # Do not use supply 'fields' if Databroker V0 is used
+        if isinstance(db, databroker._core.Broker):
+            fields = None
 
     # This is for the case of 'dcan' (1D), where the slow axis positions are not saved
     if (slow_axis not in data) and (fast_axis in data):
         data[slow_axis] = np.zeros(shape=data[fast_axis].shape)
 
-    data_out = map_data2D(
-        data,
-        datashape,
-        det_list=det_list,
-        pos_list=pos_list,
-        scaler_list=scaler_list,
-        create_each_det=create_each_det,
-        fly_type=fly_type,
-        subscan_dims=subscan_dims,
-        spectrum_len=4096,
-    )
+        data = hdr.table(fields=fields, fill=True)
+
+        # This is for the case of 'dcan' (1D), where the slow axis positions are not saved
+        if (slow_axis not in data) and (fast_axis in data):
+            data[slow_axis] = np.zeros(shape=data[fast_axis].shape)
+
+        data_out = map_data2D(
+            data,
+            datashape,
+            det_list=det_list,
+            pos_list=pos_list,
+            scaler_list=scaler_list,
+            create_each_det=create_each_det,
+            fly_type=fly_type,
+            subscan_dims=subscan_dims,
+            spectrum_len=4096,
+        )
 
     # Transform coordinates for the fast axis if necessary:
     #   Flip the direction of the fast axis for certain angles
@@ -1003,7 +1034,7 @@ def map_data2D_hxn(
         data_out["pos_data"][fast_axis_index, :, :] = np.fliplr(data_out["pos_data"][fast_axis_index, :, :])
         data_out["scaler_data"] = np.flip(data_out["scaler_data"], axis=1)
         data_out["det_sum"] = np.flip(data_out["det_sum"], axis=1)
-        for k in data.keys():
+        for k in hdr.table().keys():
             if re.search(r"^det[\d]+$", k):  # Individual detectors such as 'det1', 'det2', etc.
                 data_out[k] = np.flip(data_out[k], axis=1)
     else:
