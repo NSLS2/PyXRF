@@ -54,6 +54,7 @@ try:
             # Otherwise try to identify the beamline using host name
             hostname = platform.node()
             catalog_names = {
+                # FIXME: does this need to be updated?
                 "xf03id": "HXN",
                 "xf05id": "SRX",
                 "xf08bm": "TES",
@@ -719,7 +720,13 @@ def _get_metadata_value_from_descriptor_document_tiled(hdr, *, data_key, stream_
     try:
         value = hdr[stream_name]["data"][data_key].compute()[0]
     except Exception:
-        pass
+        # Also try to just convert it to a numpy array
+        # This seems to be necessary for some descriptors, such as
+        # `dsth` for hxn.
+        try:
+            value = np.array(hdr[stream_name]["data"][data_key])
+        except Exception:
+            pass
 
     return value
 
@@ -819,7 +826,14 @@ def map_data2D_hxn(
     # Output data is the list of data structures for all available detectors
     data_output = []
 
-    start_doc = hdr["start"]
+    # Have some way to check if we are using Tiled
+    # This seems to work.
+    is_tiled = not (
+        hasattr(databroker, '_core') and
+        hasattr(databroker._core, 'Broker') and
+        isinstance(db, databroker._core.Broker)
+    )
+    start_doc = hdr.start if is_tiled else hdr["start"]
     logger.info("Plan type: '%s'", start_doc["plan_type"])
 
     # Exclude certain types of plans based on data from the start document
@@ -828,17 +842,22 @@ def map_data2D_hxn(
             f"Failed to load the scan: plan type {start_doc['plan_type']!r} is in the list of skipped types"
         )
 
+    if is_tiled:
+        get_metadata_value_from_descriptor_document_func = _get_metadata_value_from_descriptor_document_tiled
+    else:
+        get_metadata_value_from_descriptor_document_func = _get_metadata_value_from_descriptor_document
+
     # The dictionary holding scan metadata
     mdata = _extract_metadata_from_header(hdr)
     # Some metadata is located at specific places in the descriptor documents
     # Search through the descriptor documents for the metadata
-    v = _get_metadata_value_from_descriptor_document(
+    v = get_metadata_value_from_descriptor_document_func(
         hdr, data_key="beamline_status_beam_current", stream_name="baseline"
     )
     if v is not None:
         mdata["instrument_beam_current"] = v
 
-    v = _get_metadata_value_from_descriptor_document(hdr, data_key="energy", stream_name="baseline")
+    v = get_metadata_value_from_descriptor_document_func(hdr, data_key="energy", stream_name="baseline")
     if v is not None:
         mdata["instrument_mono_incident_energy"] = v
 
@@ -860,31 +879,31 @@ def map_data2D_hxn(
     logger.info(f"Identified beamline end station: {end_station!r}")
 
     # Get theta angles (each scan has the angles for both endstations, but we need to pick one)
-    v = _get_metadata_value_from_descriptor_document(
+    v = get_metadata_value_from_descriptor_document_func(
         hdr, data_key="beamline_status_beam_current", stream_name="baseline"
     )
     if end_station == "MLL":
-        theta = _get_metadata_value_from_descriptor_document(hdr, data_key="dsth", stream_name="baseline")  # MLL
+        theta = get_metadata_value_from_descriptor_document_func(hdr, data_key="dsth", stream_name="baseline")  # MLL
     elif end_station == "ZP":
-        theta = _get_metadata_value_from_descriptor_document(hdr, data_key="zpsth", stream_name="baseline")  # ZP
+        theta = get_metadata_value_from_descriptor_document_func(hdr, data_key="zpsth", stream_name="baseline")  # ZP
     else:
         theta = None
     # Add theta to the the metadata
     if theta is not None:
-        mdata["param_theta"] = round(theta * 1000)  # Convert to mdeg (same as SRX)
+        mdata["param_theta"] = np.round(theta * 1000)  # Convert to mdeg (same as SRX)
         mdata["param_theta_units"] = "mdeg"
-        theta = round(theta, 3)  # Better presentation
+        theta = np.round(theta, 3)  # Better presentation
     else:
         logger.warning("Angle 'theta' is not found and is not included in the HDF file metadata")
 
     # ------------------------------------------------------------------------------------------------
     # Dimensions of the scan
     if "dimensions" in start_doc:
-        datashape = start_doc.dimensions
+        datashape = start_doc['dimensions']
     elif "shape" in start_doc:
-        datashape = start_doc.shape
+        datashape = start_doc['shape']
     elif "num_points" in start_doc:
-        datashape = [start_doc.num_points]
+        datashape = [start_doc['num_points']]
     else:
         logger.error("No dimension/shape is defined in hdr.start.")
 
@@ -892,9 +911,9 @@ def map_data2D_hxn(
 
     pos_list = None
     if "motors" in start_doc:
-        pos_list = start_doc.motors
+        pos_list = start_doc['motors']
     elif "axes" in start_doc:
-        pos_list = start_doc.axes
+        pos_list = start_doc['axes']
 
     if (pos_list is not None) and (n_dimensions == 1):  # 1D scan
         pname = pos_list[0]
@@ -913,7 +932,7 @@ def map_data2D_hxn(
             datashape = [1, datashape[0]]
         mdata["param_shape"] = [datashape[0], 1]
     elif n_dimensions == 2:
-        if start_doc.plan_name == "grid_scan":
+        if start_doc['plan_name'] == "grid_scan":
             datashape = [datashape[0], datashape[1]]
         else:
             datashape = [datashape[1], datashape[0]]
@@ -964,21 +983,25 @@ def map_data2D_hxn(
     with open(config_path, "r") as json_data:
         config_data = json.load(json_data)
 
-    keylist = hdr.descriptors[0].data_keys.keys()
+    desc_idx = 1 if is_tiled else 0
+    keylist = hdr.descriptors[desc_idx]['data_keys'].keys()
     det_list = [v for v in keylist if "xspress3" in v]  # find xspress3 det with key word matching
 
     scaler_list_all = config_data["scaler_list"]
 
-    all_keys = hdr.descriptors[0].data_keys.keys()
+    all_keys = hdr.descriptors[desc_idx]['data_keys'].keys()
     scaler_list = [v for v in scaler_list_all if v in all_keys]
 
     fields = det_list + scaler_list + pos_list
 
-    # Do not use supply 'fields' if Databroker V0 is used
-    if isinstance(db, databroker._core.Broker):
-        fields = None
+    if is_tiled:
+        data = pd.DataFrame({k: np.array(hdr['primary'].data[k]) for k in fields})
+    else:
+        # Do not use supply 'fields' if Databroker V0 is used
+        if isinstance(db, databroker._core.Broker):
+            fields = None
 
-    data = hdr.table(fields=fields, fill=True)
+        data = hdr.table(fields=fields, fill=True)
 
     # This is for the case of 'dcan' (1D), where the slow axis positions are not saved
     if (slow_axis not in data) and (fast_axis in data):
