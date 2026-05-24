@@ -4,7 +4,8 @@ except ModuleNotFoundError:
     from databroker import Broker
 
 db = Broker.named("hxn")
-from hxntools.handlers import register
+
+from hxntools.handlers import register  # noqa: E402
 
 register(db)
 

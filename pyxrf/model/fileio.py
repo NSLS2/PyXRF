@@ -165,6 +165,8 @@ class FileIOModel(Atom):
         """
 
         # Determine the current version of PyXRF
+        global pyxrf_version  # noqa: F824
+
         pyxrf_version_str = pyxrf_version
         if pyxrf_version_str[0].lower() != "v":
             pyxrf_version_str = f"v{pyxrf_version_str}"
