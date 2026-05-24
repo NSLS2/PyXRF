@@ -822,7 +822,7 @@ def map_data2D_hxn(
     start_doc = hdr["start"]
 
     if "scan" in start_doc:
-        #print(" panda scan ")
+        # print(" panda scan ")
         plan_type = start_doc["scan"]["type"]
 
     else:
@@ -832,9 +832,7 @@ def map_data2D_hxn(
 
     # Exclude certain types of plans based on data from the start document
     if isinstance(skip_scan_types, (list, tuple)) and (plan_type in skip_scan_types):
-        raise RuntimeError(
-            f"Failed to load the scan: plan type {plan_type!r} is in the list of skipped types"
-        )
+        raise RuntimeError(f"Failed to load the scan: plan type {plan_type!r} is in the list of skipped types")
 
     # The dictionary holding scan metadata
     mdata = _extract_metadata_from_header(hdr)
@@ -928,7 +926,7 @@ def map_data2D_hxn(
     else:
         raise ValueError(f"Invalid data shape: {datashape}. Must be a list with 1 or 2 elements.")
 
-    logger.info(f'Data shape: {datashape}.')
+    logger.info(f"Data shape: {datashape}.")
 
     # -----------------------------------------------------------------------------------------------
     # Determine fast axis and slow axis
@@ -954,7 +952,7 @@ def map_data2D_hxn(
     # -----------------------------------------------------------------------------------------------
     # Reconstruct scan input
     try:
-        if "plan_args" in start_doc: # dscan and fly1d/fly2d scan
+        if "plan_args" in start_doc:  # dscan and fly1d/fly2d scan
             plan_args = start_doc["plan_args"]
             # px_motor = plan_args["motor1"]
             px_start, px_end, px_step = plan_args["scan_start1"], plan_args["scan_end1"], plan_args["num1"]
@@ -963,7 +961,7 @@ def map_data2D_hxn(
             dwell_time = plan_args["exposure_time"]
             param_input = [px_start, px_end, px_step, py_start, py_end, py_step, dwell_time]
             mdata["param_input"] = param_input
-        elif "scan" in start_doc: # fly1dpd and fly2dpd scan
+        elif "scan" in start_doc:  # fly1dpd and fly2dpd scan
             scan_input = start_doc["scan"]["scan_input"]
             px_start, px_end, px_step = scan_input[0:3]
             py_start, py_end, py_step = scan_input[3:6]
@@ -990,8 +988,8 @@ def map_data2D_hxn(
 
     keylist = hdr.descriptors[0].data_keys.keys()
     det_list = [v for v in keylist if "xspress3" in v]  # find xspress3 det with key word matching
-    det_list = [v for v in det_list if len(v)==12] #added to filter out other rois added by user
-    
+    det_list = [v for v in det_list if len(v) == 12]  # added to filter out other rois added by user
+
     scaler_list_all = config_data["scaler_list"]
 
     all_keys = hdr.descriptors[0].data_keys.keys()
@@ -1003,8 +1001,7 @@ def map_data2D_hxn(
     if isinstance(db, databroker._core.Broker):
         fields = None
 
-    
-    data = hdr.table(fields=fields, fill=False) # HXN data is stored in h5 files, load them later in map_data2D.
+    data = hdr.table(fields=fields, fill=False)  # HXN data is stored in h5 files, load them later in map_data2D.
 
     # This is for the case of 'dcan' (1D), where the slow axis positions are not saved
     if (slow_axis not in data) and (fast_axis in data):
@@ -1020,7 +1017,7 @@ def map_data2D_hxn(
         fly_type=fly_type,
         subscan_dims=subscan_dims,
         spectrum_len=4096,
-        hdr=hdr
+        hdr=hdr,
     )
 
     # Transform coordinates for the fast axis if necessary:
@@ -3511,7 +3508,7 @@ def write_db_to_hdf(
     fname_add_version=False,
     fly_type=None,
     subscan_dims=None,
-    base_val=None
+    base_val=None,
 ):
     """
     Assume data is obained from databroker, and save the data to hdf file.
@@ -3596,7 +3593,7 @@ def write_db_to_hdf(
 
         # scanning position data
         pos_names, pos_data = get_name_value_from_db(pos_list, data, datashape)
-        
+
         for i in range(len(pos_names)):
             if "x" in pos_names[i]:
                 pos_names[i] = "x_pos"
@@ -3796,7 +3793,7 @@ def map_data2D(
     fly_type=None,
     subscan_dims=None,
     spectrum_len=4096,
-    hdr = None
+    hdr=None,
 ):
     """
     Data is obained from databroker. Transfer items from data to a dictionary of
@@ -3836,7 +3833,7 @@ def map_data2D(
         if c_name in data:
             detname = "det" + str(n + 1)
             logger.info("read data from %s" % c_name)
-            if db.name == 'hxn':
+            if db.name == "hxn":
                 channel_data = np.squeeze(np.array(list(hdr.data(c_name))))
             else:
                 channel_data = data[c_name]
@@ -3872,20 +3869,21 @@ def map_data2D(
                 sum_data += new_data
     data_output["det_sum"] = sum_data
 
-    if db.name == 'hxn':
+    if db.name == "hxn":
         pos_names = pos_list
         pos_data = np.zeros([datashape[0], datashape[1], len(pos_list)])
         from hxntools.scan_info import get_scan_positions
+
         pos = get_scan_positions(hdr)
-        if isinstance(pos,tuple):
+        if isinstance(pos, tuple):
             for i in range(len(pos)):
-                pos_data[:,:,i] = pos[i].reshape((datashape[0], datashape[1]))
+                pos_data[:, :, i] = pos[i].reshape((datashape[0], datashape[1]))
         else:
-            pos_data[:,:,0] = pos.reshape((datashape[0], datashape[1]))
+            pos_data[:, :, 0] = pos.reshape((datashape[0], datashape[1]))
     else:
         # scanning position data
         pos_names, pos_data = get_name_value_from_db(pos_list, data, datashape)
-    
+
     for i in range(len(pos_names)):
         if "x" in pos_names[i]:
             pos_names[i] = "x_pos"
@@ -3916,11 +3914,11 @@ def map_data2D(
     data_output["pos_names"] = pos_names
     data_output["pos_data"] = new_p
 
-    if db.name == 'hxn':
+    if db.name == "hxn":
         scaler_names = scaler_list
         scaler_data = np.zeros([datashape[0], datashape[1], len(scaler_list)])
         for i in range(len(scaler_list)):
-            scaler_data[:,:,i] = np.array(list(hdr.data(scaler_list[i]))).reshape((datashape[0], datashape[1]))
+            scaler_data[:, :, i] = np.array(list(hdr.data(scaler_list[i]))).reshape((datashape[0], datashape[1]))
     else:
         # scaler data
         scaler_names, scaler_data = get_name_value_from_db(scaler_list, data, datashape)
