@@ -1,4 +1,5 @@
 import os
+import sys
 
 import jsonschema
 import numpy as np
@@ -135,13 +136,21 @@ def _generate_sample_docstring(param_dict, include_section_titles=True):
         d_str.append("    -------")
 
     d_str.extend([""] * n_empty_lines_after)
-
     d_str = "\n".join(d_str)  # Convert the list to a single string
+
+    # Remove initial 4 spaces from all lines to mimick behavior of func.__doc__ in Python 3.13
+    # and later (in Python 3.13, the initial spaces are removed automatically,
+    # but in earlier versions they are not)
+    is_py313 = sys.version_info >= (3, 13)
+    if is_py313:
+        d_str = d_str.split("\n")
+        d_str = [_[4:] if len(_) > 4 else "" for _ in d_str]
+        d_str = "\n".join(d_str)
 
     return d_str, parameters
 
 
-def test_parse_docstring_parameters():
+def test_parse_docstring_parameters_01():
     # Simple test for the successfully parsed docstring. It seems sufficient, since all error cases are trivial.
 
     param_dict = _generate_parameter_set()
@@ -164,7 +173,7 @@ def test_parse_docstring_parameters():
     # Check for exception if the section titles are required, but don't exist
     param_dict = _generate_parameter_set()
     d_str, parameters = _generate_sample_docstring(param_dict, include_section_titles=False)
-    with pytest.raises(AssertionError, match="'Parameters' or 'Return' statement was not found in the docstring"):
+    with pytest.raises(AssertionError, match="'Parameters' or 'Returns' statement was not found in the docstring"):
         _parse_docstring_parameters(d_str, search_param_section=True)
 
 
