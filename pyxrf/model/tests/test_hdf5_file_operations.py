@@ -23,7 +23,7 @@ def _prepare_raw_dataset(N=5, M=10, K=4096):
     pos_data = np.zeros(shape=[2, N, M])
     pos_data[0, :, :] = np.broadcast_to(np.linspace(1, 1 + (M - 1) * 0.1, M), shape=[N, M])
     pos_data[1, :, :] = np.broadcast_to(
-        np.reshape(np.linspace(5, 5 + (N - 1) * 0.2, N), newshape=[N, 1]), shape=[N, M]
+        np.reshape(np.linspace(5, 5 + (N - 1) * 0.2, N), shape=[N, 1]), shape=[N, M]
     )
 
     data = {

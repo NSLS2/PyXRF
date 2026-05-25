@@ -347,9 +347,11 @@ def test_get_quant_fluor_data_dict():
         ), "Generated object contains emission lines that are different from expected"
 
         mass_sum = sum([_["density"] for _ in quant_fluor_data_dict["element_lines"].values()])
-        assert (
-            mass_sum == mass_sum_expected
-        ), "The total mass (density) of the components is different from expected"
+        npt.assert_almost_equal(
+            mass_sum, 
+            mass_sum_expected,
+            err_msg="The total mass (density) of the components is different from expected"
+        )
 
 
 def gen_xrf_map_dict(nx=10, ny=5, elines=["S_K", "Au_M", "Fe_K"]):

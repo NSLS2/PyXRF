@@ -51,6 +51,7 @@ def test_dask_client_create(tmpdir):
     client = dask_client_create(n_workers=n_workers_requested)
     n_workers = len(client.scheduler_info()["workers"])
     assert n_workers == n_workers_requested, "The number of workers was set incorrectly"
+
     client.close()
 
     assert not os.path.exists(dask_worker_space_path), "Temporary directory was created in the current directory"
