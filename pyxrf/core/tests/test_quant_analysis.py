@@ -348,9 +348,9 @@ def test_get_quant_fluor_data_dict():
 
         mass_sum = sum([_["density"] for _ in quant_fluor_data_dict["element_lines"].values()])
         npt.assert_almost_equal(
-            mass_sum, 
+            mass_sum,
             mass_sum_expected,
-            err_msg="The total mass (density) of the components is different from expected"
+            err_msg="The total mass (density) of the components is different from expected",
         )
 
 
