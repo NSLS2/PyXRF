@@ -2290,6 +2290,10 @@ def map_data2D_srx_new_tiled(
     slow_step = (slow_stop - slow_start) / slow_pts
 
     snaking_enabled = bool(scan_doc["snake"])
+    if fast_pts == 1 or slow_pts == 1:
+        # There is only one row or column of data
+        # and no need to flip the data to match snaking
+        snaking_enabled = False
 
     print(f"Scan type: {scan_doc['type']}")
 
