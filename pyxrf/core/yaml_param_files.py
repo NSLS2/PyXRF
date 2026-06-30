@@ -1,5 +1,6 @@
 import os
 import re
+import sys
 
 import yaml
 
@@ -51,6 +52,11 @@ def _parse_docstring_parameters(doc_string, search_param_section=True):
 
     str_list = doc_string.split("\n")
 
+    is_py313 = sys.version_info >= (3, 13)
+    if is_py313:
+        # Add initial 4 spaces to all lines
+        str_list = [f"    {_}" for _ in str_list]
+
     # Remove all spaces at the end of the strings (the should be no spaces there, but still)
     str_list = [s.rstrip() for s in str_list]
 
@@ -70,7 +76,7 @@ def _parse_docstring_parameters(doc_string, search_param_section=True):
 
     assert (n_first is not None) or (
         n_last is not None
-    ), "Incorrect docstring format: 'Parameters' or 'Return' statement was not found in the docstring"
+    ), "Incorrect docstring format: 'Parameters' or 'Returns' statement was not found in the docstring"
 
     # The list of strings contains parameter descriptions
     str_list = str_list[n_first : n_last + 1]
@@ -78,6 +84,7 @@ def _parse_docstring_parameters(doc_string, search_param_section=True):
     assert all(
         [(not s) or re.search(r"^    ", s) for s in str_list]
     ), "Incorrect docstring format: parameter descriptions should be indented by at least FOUR spaces"
+
     # Now remove the spaces from nonempty lines
     str_list = [s[4:] if s else s for s in str_list]
 
@@ -99,7 +106,7 @@ def _parse_docstring_parameters(doc_string, search_param_section=True):
     #   The fist line of the description is actually the
     assert all(
         [len(s) > 1 for s in param_descriptions]
-    ), "Incomplete docstring: some parameters have not descriptions"
+    ), "Incomplete docstring: some parameters have no descriptions"
 
     params = list(zip(param_names, param_descriptions))
 
