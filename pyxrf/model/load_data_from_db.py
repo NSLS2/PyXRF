@@ -1875,6 +1875,7 @@ def map_data2D_srx_new(
         d_xs, d_xs_sum, N_xs = [], [], 0
         d_xs2, d_xs2_sum, N_xs2 = [], [], 0
         sclr_list = ["i0", "i0_time", "time", "im", "it"]
+        sclr_list += [f"i{n:02}" for n in range(5, 32 + 1)]
         sclr_dict = {}
         fast_pos, slow_pos = [], []
 
@@ -2432,6 +2433,7 @@ def map_data2D_srx_new_tiled(
             raise ValueError(f"No fluorescence data is found for the experiment {run_id_uid!r}")
 
         sclr_list = ["i0", "i0_time", "im", "it"]
+        sclr_list += [f"i{n:02}" for n in range(5, 32 + 1)]
         sclr_dict = dict()
         for k in sclr_list:
             if k in data_stream0:
